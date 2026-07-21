@@ -1,36 +1,26 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Next.js 16.2.9 orphaned streamed segment repro
 
-## Getting Started
+Minimal reproduction for a bug filed against [vercel/next.js](https://github.com/vercel/next.js): a dynamic route with an ancestor `loading.tsx` ships raw HTML containing an orphaned streamed segment — a real, non-hydrated copy of the page's content that's never referenced by any `$RC(...)` swap call and never removed.
 
-First, run the development server:
+No `experimental.ppr`, no `cacheComponents`, no `dynamicIO` — see `next.config.ts`.
+
+## Reproduce
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run build
+npm run start
+curl -s http://localhost:3000/anyusername -o out.html
+grep -oE 'id="S:[0-9]+"' out.html      # two segments: S:0, S:1
+grep -o '\$RC("[^)]*")' out.html       # only one swap call, referencing S:0
+grep -oE '<template id="P:[0-9]+"' out.html  # a postponed-hole template inside S:0
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`S:0` (the segment that gets swapped in) is an empty postponed-hole placeholder. `S:1` (the orphan, never swapped, never removed) holds the real, fully-rendered page content.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## The trigger shape
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/[user]/loading.tsx` — an ancestor `loading.tsx`, which the App Router uses to auto-wrap the route segment in a `<Suspense>` boundary.
+- `app/[user]/page.tsx` — `export const dynamic = "force-dynamic"`, reads `cookies()` before an async data fetch, renders real markup.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Environment: Next.js 16.2.9, React/React DOM 19.2.4, App Router, Turbopack.
